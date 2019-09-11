@@ -97,17 +97,17 @@ fn run_capture(
                     Some(Udp(value)) => (
                         "udp",
                         if out {
-                            value.destination_port()
-                        } else {
                             value.source_port()
+                        } else {
+                            value.destination_port()
                         },
                     ),
                     Some(Tcp(value)) => (
                         "tcp",
                         if out {
-                            value.destination_port()
-                        } else {
                             value.source_port()
+                        } else {
+                            value.destination_port()
                         },
                     ),
                     None => continue,
