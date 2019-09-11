@@ -1,0 +1,11 @@
+[package]
+name = "packetstats"
+version = "0.1.0"
+authors = ["Shish <shish@shishnet.org>"]
+edition = "2018"
+
+[dependencies]
+pcap = "*"
+argparse = "*"
+etherparse = "*"
+dns-lookup = "*"
