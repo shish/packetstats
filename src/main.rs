@@ -46,9 +46,10 @@ fn run_capture(
     cap: &mut pcap::Capture<pcap::Active>,
     socket: &Option<String>,
 ) {
-    let mut ip_recv: HashMap<String, u64> = HashMap::new();
-    let mut ip_send: HashMap<String, u64> = HashMap::new();
+    let mut resolv: HashMap<IpAddr, String> = HashMap::new();
+    let mut hosts: HashMap<String, u64> = HashMap::new();
     let mut now = Instant::now();
+	let freq = 10;
     let my_mac = [0xDC, 0xA6, 0x32, 0x09, 0xA8, 0x88]; // /sys/class/net/eth0/address
 
     while let Ok(packet) = cap.next() {
@@ -92,7 +93,10 @@ fn run_capture(
                 };
 
                 // Get a connection name
-                let remote_name = lookup_addr(&remote_ip).unwrap();
+				if !resolv.contains_key(&remote_ip) {
+					resolv.insert(remote_ip, lookup_addr(&remote_ip).unwrap());
+				}
+				let remote_name = resolv.get(&remote_ip).unwrap();
                 let (proto, port) = match value.transport {
                     Some(Udp(value)) => (
                         "udp",
@@ -112,50 +116,34 @@ fn run_capture(
                     ),
                     None => continue,
                 };
-                let connection = format!("{}:{}:{}", remote_name, proto, port).to_string();
+
+				let dir = if out {"send"} else {"recv"};
+
+                let connection = format!("address={},counter={},protocol={},port={}", remote_name, dir, proto, port).to_string();
 
                 // increment sent or received hashmap
-                if out {
-                    *ip_send.entry(connection).or_insert(0) += packet_len;
-                } else {
-                    *ip_recv.entry(connection).or_insert(0) += packet_len;
-                }
+				*hosts.entry(connection).or_insert(0) += packet_len;
 
-                if now.elapsed().as_secs() > 10 {
+                if now.elapsed().as_secs() > freq {
                     now = Instant::now();
-                    log_data("recv", device, &mut ip_recv, &socket);
-                    log_data("send", device, &mut ip_send, &socket);
+					for (key, value) in &hosts {
+						let line = format!(
+							"packetstats,interface={},{} value={}",
+							device,
+							key,
+							value / freq
+						);
+						match socket {
+							Some(socket) => {
+								let s = UnixDatagram::unbound().unwrap();
+								s.send_to(line.as_bytes(), socket).unwrap();
+							},
+							None => println!("{}", line)
+						}
+					}
+					hosts.clear()
                 }
             }
         }
     }
-}
-
-fn log_data(
-    counter: &str,
-    device: &String,
-    dict: &mut HashMap<String, u64>,
-    socket: &Option<String>,
-) {
-    let line = format!(
-        "packetstats,counter={},interface={} {}",
-        counter,
-        device,
-        dict2str(&dict)
-    );
-    match socket {
-        Some(socket) => {
-            let s = UnixDatagram::unbound().unwrap();
-            s.send_to(line.as_bytes(), socket).unwrap();
-        },
-        None => println!("{}", line)
-    }
-}
-
-fn dict2str(map: &HashMap<String, u64>) -> String {
-    let mut result = "".to_string();
-    for (key, value) in &*map {
-        result = format!("{}{}", result, format!("{}={},", key, value));
-    }
-    return result.trim_end_matches(',').to_string();
 }
