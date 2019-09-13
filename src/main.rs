@@ -47,6 +47,7 @@ fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>, socket: &
     let mut now = Instant::now();
     let freq = 10;
     let my_mac = [0xDC, 0xA6, 0x32, 0x09, 0xA8, 0x88]; // /sys/class/net/eth0/address
+    let mut last_stats = cap.stats().unwrap();
 
     while let Ok(packet) = cap.next() {
         let sliced_packet = SlicedPacket::from_ethernet(&packet.data);
@@ -140,6 +141,22 @@ fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>, socket: &
                             }
                             None => println!("{}", line),
                         }
+                    }
+                    let stats = cap.stats().unwrap();
+                    let line = format!(
+                        "packetstats_meta,interface={} received={},dropped={},if_dropped={}",
+                        device,
+                        stats.received - last_stats.received,
+                        stats.dropped - last_stats.dropped,
+                        stats.if_dropped - last_stats.if_dropped
+                    );
+                    last_stats = stats;
+                    match socket {
+                        Some(socket) => {
+                            let s = UnixDatagram::unbound().unwrap();
+                            s.send_to(line.as_bytes(), socket).unwrap();
+                        }
+                        None => println!("{}", line),
                     }
                     hosts.clear()
                 }
