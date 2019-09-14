@@ -158,7 +158,8 @@ fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>, socket: &
                         }
                         None => println!("{}", line),
                     }
-                    hosts.clear()
+                    hosts.clear();
+                    resolv.clear();
                 }
             }
         }
