@@ -146,9 +146,9 @@ fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>, socket: &
                     let line = format!(
                         "packetstats_meta,interface={} received={},dropped={},if_dropped={}",
                         device,
-                        stats.received - last_stats.received,
-                        stats.dropped - last_stats.dropped,
-                        stats.if_dropped - last_stats.if_dropped
+                        (stats.received - last_stats.received) / freq as u32,
+                        (stats.dropped - last_stats.dropped) / freq as u32,
+                        (stats.if_dropped - last_stats.if_dropped) / freq as u32
                     );
                     last_stats = stats;
                     match socket {
