@@ -128,40 +128,42 @@ fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>, socket: &
                 if now.elapsed().as_secs() > freq {
                     now = Instant::now();
                     for (key, value) in &hosts {
-                        let line = format!(
-                            "packetstats,interface={},{} value={}",
-                            device,
-                            key,
-                            value / freq
-                        );
-                        match socket {
-                            Some(socket) => {
-                                let s = UnixDatagram::unbound().unwrap();
-                                s.send_to(line.as_bytes(), socket).unwrap();
-                            }
-                            None => println!("{}", line),
-                        }
+                        log_data(
+                            socket,
+                            format!(
+                                "packetstats,interface={},{} value={}",
+                                device,
+                                key,
+                                value / freq
+                            ),
+                        )
                     }
                     let stats = cap.stats().unwrap();
-                    let line = format!(
-                        "packetstats_meta,interface={} received={},dropped={},if_dropped={}",
-                        device,
-                        (stats.received - last_stats.received) / freq as u32,
-                        (stats.dropped - last_stats.dropped) / freq as u32,
-                        (stats.if_dropped - last_stats.if_dropped) / freq as u32
+                    log_data(
+                        socket,
+                        format!(
+                            "packetstats_meta,interface={} received={},dropped={},if_dropped={}",
+                            device,
+                            (stats.received - last_stats.received) / freq as u32,
+                            (stats.dropped - last_stats.dropped) / freq as u32,
+                            (stats.if_dropped - last_stats.if_dropped) / freq as u32
+                        ),
                     );
                     last_stats = stats;
-                    match socket {
-                        Some(socket) => {
-                            let s = UnixDatagram::unbound().unwrap();
-                            s.send_to(line.as_bytes(), socket).unwrap();
-                        }
-                        None => println!("{}", line),
-                    }
                     hosts.clear();
                     resolv.clear();
                 }
             }
         }
+    }
+}
+
+fn log_data(socket: &Option<String>, line: String) -> () {
+    match socket {
+        Some(socket) => {
+            let s = UnixDatagram::unbound().unwrap();
+            s.send_to(line.as_bytes(), socket).unwrap();
+        }
+        None => println!("{}", line),
     }
 }
