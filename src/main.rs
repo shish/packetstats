@@ -3,17 +3,15 @@ extern crate etherparse;
 extern crate pcap;
 use etherparse::*;
 
-use argparse::{ArgumentParser, Store, StoreOption}; // , StoreTrue};
+use argparse::{ArgumentParser, Store};
 use dns_lookup::lookup_addr;
 use pcap::{Capture, Device};
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::os::unix::net::UnixDatagram;
 use std::time::Instant;
 
 fn main() {
     let mut device: String = "eth0".to_string();
-    let mut socket: Option<String> = None;
     {
         let mut parser = ArgumentParser::new();
         parser.set_description("Get network stats");
@@ -21,11 +19,6 @@ fn main() {
             &["-i", "--interface"],
             Store,
             "Device to sniff packets from",
-        );
-        parser.refer(&mut socket).add_option(
-            &["-s", "--socket"],
-            StoreOption,
-            "UNIX socket to write stats to in influx format",
         );
         parser.parse_args_or_exit();
     }
@@ -38,10 +31,10 @@ fn main() {
     .open()
     .unwrap();
 
-    run_capture(&device, &mut cap, &socket);
+    run_capture(&device, &mut cap);
 }
 
-fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>, socket: &Option<String>) {
+fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>) {
     let mut resolv: HashMap<IpAddr, String> = HashMap::new();
     let mut hosts: HashMap<String, u64> = HashMap::new();
     let mut now = Instant::now();
@@ -128,26 +121,20 @@ fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>, socket: &
                 if now.elapsed().as_secs() > freq {
                     now = Instant::now();
                     for (key, value) in &hosts {
-                        log_data(
-                            socket,
-                            format!(
-                                "packetstats,interface={},{} value={}",
-                                device,
-                                key,
-                                value / freq
-                            ),
-                        )
+                        println!(
+                            "packetstats,interface={},{} value={}",
+                            device,
+                            key,
+                            value / freq
+                        );
                     }
                     let stats = cap.stats().unwrap();
-                    log_data(
-                        socket,
-                        format!(
-                            "packetstats_meta,interface={} received={},dropped={},if_dropped={}",
-                            device,
-                            (stats.received - last_stats.received) / freq as u32,
-                            (stats.dropped - last_stats.dropped) / freq as u32,
-                            (stats.if_dropped - last_stats.if_dropped) / freq as u32
-                        ),
+                    println!(
+                        "packetstats_meta,interface={} received={},dropped={},if_dropped={}",
+                        device,
+                        (stats.received - last_stats.received) / freq as u32,
+                        (stats.dropped - last_stats.dropped) / freq as u32,
+                        (stats.if_dropped - last_stats.if_dropped) / freq as u32
                     );
                     last_stats = stats;
                     hosts.clear();
@@ -155,15 +142,5 @@ fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>, socket: &
                 }
             }
         }
-    }
-}
-
-fn log_data(socket: &Option<String>, line: String) -> () {
-    match socket {
-        Some(socket) => {
-            let s = UnixDatagram::unbound().unwrap();
-            s.send_to(line.as_bytes(), socket).unwrap();
-        }
-        None => println!("{}", line),
     }
 }
