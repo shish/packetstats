@@ -7,6 +7,8 @@ use argparse::{ArgumentParser, Store, StoreFalse};
 use dns_lookup::lookup_addr;
 use pcap::{Capture, Device};
 use std::collections::HashMap;
+use std::convert::TryInto;
+use std::fs;
 use std::net::IpAddr;
 use std::time::Instant;
 
@@ -33,7 +35,20 @@ fn main() {
 }
 
 fn get_mac(device: &String) -> [u8; 6] {
-    return [0xDC, 0xA6, 0x32, 0x09, 0xA8, 0x88]; // /sys/class/net/eth0/address
+    let data: String = fs::read_to_string(format!("/sys/class/net/{}/address", device))
+        .expect("Unable to read file");
+    let bytes_vec: Vec<&str> = data.trim().split(":").collect();
+    let bytes_arr: [&str; 6] = bytes_vec[0..6]
+        .try_into()
+        .expect("slice with incorrect length");
+    return [
+        u8::from_str_radix(bytes_arr[0], 16).unwrap(),
+        u8::from_str_radix(bytes_arr[1], 16).unwrap(),
+        u8::from_str_radix(bytes_arr[2], 16).unwrap(),
+        u8::from_str_radix(bytes_arr[3], 16).unwrap(),
+        u8::from_str_radix(bytes_arr[4], 16).unwrap(),
+        u8::from_str_radix(bytes_arr[5], 16).unwrap(),
+    ];
 }
 
 fn run_capture(device: &String, names: bool) {
