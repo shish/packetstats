@@ -3,7 +3,7 @@ extern crate etherparse;
 extern crate pcap;
 use etherparse::*;
 
-use argparse::{ArgumentParser, Store, StoreFalse};
+use argparse::{ArgumentParser, Store, StoreFalse, StoreTrue};
 use dns_lookup::lookup_addr;
 use pcap::{Capture, Device};
 use std::collections::HashMap;
@@ -15,6 +15,7 @@ use std::time::Instant;
 fn main() {
     let mut device: String = "eth0".to_string();
     let mut names: bool = true;
+    let mut server: bool = false;
     {
         let mut parser = ArgumentParser::new();
         parser.set_description("Get network stats");
@@ -28,10 +29,16 @@ fn main() {
             StoreFalse,
             "Don't convert IP addresses to names",
         );
+        parser.refer(&mut server).add_option(
+            &["-s", "--server"],
+            StoreTrue,
+            "Record the local port numbers (default: assume we are a client \
+            and record the remote port numbers)",
+        );
         parser.parse_args_or_exit();
     }
 
-    run_capture(&device, names);
+    run_capture(&device, names, server);
 }
 
 fn get_mac(device: &String) -> [u8; 6] {
@@ -51,7 +58,7 @@ fn get_mac(device: &String) -> [u8; 6] {
     ];
 }
 
-fn run_capture(device: &String, names: bool) {
+fn run_capture(device: &String, names: bool, server: bool) {
     let mut resolv: HashMap<IpAddr, String> = HashMap::new();
     let mut hosts: HashMap<String, u64> = HashMap::new();
     let mut now = Instant::now();
@@ -120,7 +127,7 @@ fn run_capture(device: &String, names: bool) {
                 let (proto, port) = match value.transport {
                     Some(Udp(value)) => (
                         "udp",
-                        if out {
+                        if server == out {
                             value.source_port()
                         } else {
                             value.destination_port()
@@ -128,7 +135,7 @@ fn run_capture(device: &String, names: bool) {
                     ),
                     Some(Tcp(value)) => (
                         "tcp",
-                        if out {
+                        if server == out {
                             value.source_port()
                         } else {
                             value.destination_port()
