@@ -29,6 +29,19 @@ fn main() {
         parser.parse_args_or_exit();
     }
 
+    run_capture(&device, names);
+}
+
+fn get_mac(device: &String) -> [u8; 6] {
+    return [0xDC, 0xA6, 0x32, 0x09, 0xA8, 0x88]; // /sys/class/net/eth0/address
+}
+
+fn run_capture(device: &String, names: bool) {
+    let mut resolv: HashMap<IpAddr, String> = HashMap::new();
+    let mut hosts: HashMap<String, u64> = HashMap::new();
+    let mut now = Instant::now();
+    let freq = 10;
+    let my_mac = get_mac(device);
     let mut cap = Capture::from_device(Device {
         name: device.clone(),
         desc: None,
@@ -36,16 +49,6 @@ fn main() {
     .unwrap()
     .open()
     .unwrap();
-
-    run_capture(&device, &mut cap, names);
-}
-
-fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>, names: bool) {
-    let mut resolv: HashMap<IpAddr, String> = HashMap::new();
-    let mut hosts: HashMap<String, u64> = HashMap::new();
-    let mut now = Instant::now();
-    let freq = 10;
-    let my_mac = [0xDC, 0xA6, 0x32, 0x09, 0xA8, 0x88]; // /sys/class/net/eth0/address
     let mut last_stats = cap.stats().unwrap();
 
     while let Ok(packet) = cap.next() {
