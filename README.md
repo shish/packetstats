@@ -3,7 +3,8 @@ packetstats
 
 Options:
 ```
--i --interface
+-i --interface     which network interface to listen to
+-n --no-names      don't do reverse dns lookups
 ```
 
 Example:

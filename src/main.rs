@@ -3,7 +3,7 @@ extern crate etherparse;
 extern crate pcap;
 use etherparse::*;
 
-use argparse::{ArgumentParser, Store};
+use argparse::{ArgumentParser, Store, StoreFalse};
 use dns_lookup::lookup_addr;
 use pcap::{Capture, Device};
 use std::collections::HashMap;
@@ -12,6 +12,7 @@ use std::time::Instant;
 
 fn main() {
     let mut device: String = "eth0".to_string();
+    let mut names: bool = true;
     {
         let mut parser = ArgumentParser::new();
         parser.set_description("Get network stats");
@@ -19,6 +20,11 @@ fn main() {
             &["-i", "--interface"],
             Store,
             "Device to sniff packets from",
+        );
+        parser.refer(&mut names).add_option(
+            &["-n", "--no-names"],
+            StoreFalse,
+            "Don't convert IP addresses to names",
         );
         parser.parse_args_or_exit();
     }
@@ -31,10 +37,10 @@ fn main() {
     .open()
     .unwrap();
 
-    run_capture(&device, &mut cap);
+    run_capture(&device, &mut cap, names);
 }
 
-fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>) {
+fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>, names: bool) {
     let mut resolv: HashMap<IpAddr, String> = HashMap::new();
     let mut hosts: HashMap<String, u64> = HashMap::new();
     let mut now = Instant::now();
@@ -83,10 +89,16 @@ fn run_capture(device: &String, cap: &mut pcap::Capture<pcap::Active>) {
                 };
 
                 // Get a connection name
-                if !resolv.contains_key(&remote_ip) {
-                    resolv.insert(remote_ip, lookup_addr(&remote_ip).unwrap());
-                }
-                let remote_name = resolv.get(&remote_ip).unwrap();
+                let remote_ip_str;
+                let remote_name = if names {
+                    if !resolv.contains_key(&remote_ip) {
+                        resolv.insert(remote_ip, lookup_addr(&remote_ip).unwrap());
+                    }
+                    resolv.get(&remote_ip).unwrap()
+                } else {
+                    remote_ip_str = remote_ip.to_string();
+                    &remote_ip_str
+                };
                 let (proto, port) = match value.transport {
                     Some(Udp(value)) => (
                         "udp",
