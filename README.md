@@ -11,6 +11,9 @@ dongles as upstream connections - I wanted to figure out the main bandwidth
 hogs to send them over the cheap connection, and leave the rest on the fast
 connection.
 
+`packetstats` numbers are bytes-per-second, `packetstats_meta` numbers are
+packets-per-second.
+
 Options:
 ```
 -i --interface     which network interface to listen to
@@ -24,6 +27,7 @@ root@netpi:~# packetstats -i eth0
 packetstats,interface=eth0,address=chai,counter=recv,protocol=tcp,port=8086 value=871
 packetstats,interface=eth0,address=Muha,counter=recv,protocol=tcp,port=22067 value=4
 packetstats,interface=eth0,address=shish2k-mbp,counter=send,protocol=udp,port=8001 value=3
+packetstats_meta,interface=eth0 received=1,dropped=0,if_dropped=0
 ```
 
 Build:
