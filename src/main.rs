@@ -3,17 +3,18 @@ extern crate etherparse;
 extern crate pcap;
 use etherparse::*;
 
+use anyhow::{anyhow, Result};
 use argparse::{ArgumentParser, Store, StoreFalse, StoreTrue};
 use dns_lookup::lookup_addr;
-use pcap::{Capture, Device};
+use pcap::{Capture, Device, Packet};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs;
 use std::net::IpAddr;
 use std::time::Instant;
 
-fn main() {
-    let mut device: String = "eth0".to_string();
+fn main() -> Result<()> {
+    let mut device: String = Device::lookup()?.expect("No default device found").name;
     let mut names: bool = true;
     let mut server: bool = false;
     {
@@ -38,7 +39,9 @@ fn main() {
         parser.parse_args_or_exit();
     }
 
-    run_capture(&device, names, server);
+    run_capture(&device, names, server)?;
+
+    Ok(())
 }
 
 fn get_mac(device: &String) -> [u8; 6] {
@@ -58,126 +61,144 @@ fn get_mac(device: &String) -> [u8; 6] {
     ];
 }
 
-fn run_capture(device: &String, names: bool, server: bool) {
+fn run_capture(device: &String, names: bool, server: bool) -> Result<()> {
     let mut resolv: HashMap<IpAddr, String> = HashMap::new();
     let mut hosts: HashMap<String, u64> = HashMap::new();
     let mut now = Instant::now();
     let freq = 10;
     let my_mac = get_mac(device);
-    let mut cap = Capture::from_device(Device {
-        name: device.clone(),
-        desc: None,
-    })
-    .unwrap()
-    .open()
-    .unwrap();
-    let mut last_stats = cap.stats().unwrap();
+    let dev = Device::list()?
+        .iter()
+        .find(|d| d.name == *device)
+        .ok_or(anyhow!("Can't find device '{}'", device))?
+        .clone();
+    let mut cap = Capture::from_device(dev)?.open()?;
+    let mut last_stats = cap.stats()?;
 
-    while let Ok(packet) = cap.next() {
-        let sliced_packet = SlicedPacket::from_ethernet(&packet.data);
-        match sliced_packet {
-            Err(value) => println!("Err {:?}", value),
-            Ok(value) => {
-                use crate::InternetSlice::*;
-                use crate::LinkSlice::*;
-                use crate::TransportSlice::*;
+    loop {
+        if let Some((remote_name, out, proto, port, packet_len)) =
+            parse_packet(cap.next_packet()?, my_mac, names, server, &mut resolv)?
+        {
+            let dir = if out { "send" } else { "recv" };
 
-                // Figure out if this packet is being sent or received
-                let out = match value.link {
-                    Some(Ethernet2(value)) => value.source() == my_mac,
-                    None => {
-                        continue;
-                    }
-                };
+            let connection = format!(
+                "address={},counter={},protocol={},port={}",
+                remote_name, dir, proto, port
+            )
+            .to_string();
 
-                // Get remote address and packet length in a v4/v6-neutral way
-                let (remote_ip, packet_len) = match value.ip {
-                    Some(Ipv4(value)) => (
-                        IpAddr::V4(if out {
-                            value.destination_addr()
-                        } else {
-                            value.source_addr()
-                        }),
-                        value.to_header().total_len() as u64,
-                    ),
-                    Some(Ipv6(value, _)) => (
-                        IpAddr::V6(if out {
-                            value.destination_addr()
-                        } else {
-                            value.source_addr()
-                        }),
-                        value.to_header().payload_length as u64,
-                    ),
-                    None => {
-                        continue;
-                    }
-                };
+            // increment sent or received hashmap
+            *hosts.entry(connection).or_insert(0) += packet_len;
+        }
 
-                // Get a connection name
-                let remote_ip_str;
-                let remote_name = if names {
-                    if !resolv.contains_key(&remote_ip) {
-                        resolv.insert(remote_ip, lookup_addr(&remote_ip).unwrap());
-                    }
-                    resolv.get(&remote_ip).unwrap()
-                } else {
-                    remote_ip_str = remote_ip.to_string();
-                    &remote_ip_str
-                };
-                let (proto, port) = match value.transport {
-                    Some(Udp(value)) => (
-                        "udp",
-                        if server == out {
-                            value.source_port()
-                        } else {
-                            value.destination_port()
-                        },
-                    ),
-                    Some(Tcp(value)) => (
-                        "tcp",
-                        if server == out {
-                            value.source_port()
-                        } else {
-                            value.destination_port()
-                        },
-                    ),
-                    None => continue,
-                };
-
-                let dir = if out { "send" } else { "recv" };
-
-                let connection = format!(
-                    "address={},counter={},protocol={},port={}",
-                    remote_name, dir, proto, port
-                )
-                .to_string();
-
-                // increment sent or received hashmap
-                *hosts.entry(connection).or_insert(0) += packet_len;
-
-                if now.elapsed().as_secs() > freq {
-                    now = Instant::now();
-                    for (key, value) in &hosts {
-                        println!(
-                            "packetstats,interface={},{} value={}",
-                            device,
-                            key,
-                            value / freq
-                        );
-                    }
-                    let stats = cap.stats().unwrap();
-                    println!(
-                        "packetstats_meta,interface={} received={},dropped={},if_dropped={}",
-                        device,
-                        (stats.received - last_stats.received) / freq as u32,
-                        (stats.dropped - last_stats.dropped) / freq as u32,
-                        (stats.if_dropped - last_stats.if_dropped) / freq as u32
-                    );
-                    last_stats = stats;
-                    hosts.clear();
-                    resolv.clear();
-                }
+        if now.elapsed().as_secs() > freq {
+            now = Instant::now();
+            for (key, value) in &hosts {
+                println!(
+                    "packetstats,interface={},{} value={}",
+                    device,
+                    key,
+                    value / freq
+                );
             }
+            let stats = cap.stats()?;
+            println!(
+                "packetstats_meta,interface={} received={},dropped={},if_dropped={}",
+                device,
+                (stats.received - last_stats.received) / freq as u32,
+                (stats.dropped - last_stats.dropped) / freq as u32,
+                (stats.if_dropped - last_stats.if_dropped) / freq as u32
+            );
+            last_stats = stats;
+            hosts.clear();
+            resolv.clear();
         }
     }
+}
+
+/**
+ * Parse an ethernet + IP + TCP/UDP packet and return stats about it.
+ * Returns None if the packet is not ethernet / not IP / etc.
+ */
+fn parse_packet(
+    raw_packet: Packet,
+    my_mac: [u8; 6],
+    names: bool,
+    server: bool,
+    resolv: &mut HashMap<IpAddr, String>,
+) -> Result<Option<(String, bool, String, u16, u64)>> {
+    use crate::InternetSlice::*;
+    use crate::LinkSlice::*;
+    use crate::TransportSlice::*;
+
+    let packet = SlicedPacket::from_ethernet(&raw_packet.data)?;
+
+    // Figure out if this packet is being sent or received
+    let out = match packet.link {
+        Some(Ethernet2(value)) => value.source() == my_mac,
+        _ => return Ok(None),
+    };
+
+    // Get remote address and packet length in a v4/v6-neutral way
+    let (remote_ip, packet_len) = match packet.net.unwrap() {
+        Ipv4(value) => (
+            IpAddr::V4(if out {
+                value.header().destination_addr()
+            } else {
+                value.header().source_addr()
+            }),
+            value.header().total_len() as u64,
+        ),
+        Ipv6(value) => (
+            IpAddr::V6(if out {
+                value.header().destination_addr()
+            } else {
+                value.header().source_addr()
+            }),
+            value.header().payload_length() as u64,
+        ),
+        _ => return Ok(None),
+    };
+
+    // Get a connection name
+    let remote_ip_str;
+    let remote_name = if names {
+        if !resolv.contains_key(&remote_ip) {
+            resolv.insert(
+                remote_ip,
+                lookup_addr(&remote_ip).unwrap_or(remote_ip.to_string()),
+            );
+        }
+        resolv.get(&remote_ip).unwrap()
+    } else {
+        remote_ip_str = remote_ip.to_string();
+        &remote_ip_str
+    };
+    let (proto, port) = match packet.transport {
+        Some(Udp(value)) => (
+            "udp",
+            if server == out {
+                value.source_port()
+            } else {
+                value.destination_port()
+            },
+        ),
+        Some(Tcp(value)) => (
+            "tcp",
+            if server == out {
+                value.source_port()
+            } else {
+                value.destination_port()
+            },
+        ),
+        _ => return Ok(None),
+    };
+
+    return Ok(Some((
+        remote_name.to_string(),
+        out,
+        proto.to_string(),
+        port,
+        packet_len,
+    )));
 }

@@ -5,7 +5,8 @@ authors = ["Shish <shish@shishnet.org>"]
 edition = "2018"
 
 [dependencies]
-pcap = "*"
-argparse = "*"
-etherparse = "*"
-dns-lookup = "*"
+pcap = "2.2.0"
+argparse = "0.2.2"
+etherparse = "0.18.0"
+dns-lookup = "2.0.4"
+anyhow = "1.0.98"
