@@ -1,5 +1,4 @@
-packetstats
-===========
+# packetstats
 
 Keep track of which TCP / UDP ports are seeing most traffic. Works on clients,
 servers, and routers (Allowing you to see which clients on your LAN are
