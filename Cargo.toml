@@ -6,10 +6,10 @@ edition = "2021"
 
 [dependencies]
 pcap = "2.2.0"
-clap = { version = "4.5.4", features = ["derive"] }
+clap = { version = "4.6.0", features = ["derive"] }
 etherparse = "0.18.0"
 dns-lookup = "2.0.4"
-anyhow = "1.0.98"
+anyhow = "1.0.102"
 
 [lints.clippy]
 dbg_macro = "deny"
