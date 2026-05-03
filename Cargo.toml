@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 pcap = "2.2.0"
-clap = { version = "4.6.0", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 etherparse = "0.20.1"
 dns-lookup = "3.0.1"
 anyhow = "1.0.102"
