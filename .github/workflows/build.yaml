@@ -13,5 +13,6 @@ jobs:
   build:
     runs-on: ubuntu-26.04
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
+    - run: sudo apt install -y libpcap-dev
     - run: cargo build --release
